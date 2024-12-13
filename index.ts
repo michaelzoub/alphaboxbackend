@@ -19,7 +19,7 @@ async function sendToDiscordBot(contractAddress:string) {
     try {
         await axios.post(discordWebhook, {
             username: 'Nibba Tracker',
-            content: `**Insider new buy. Here's the CA: ${contractAddress}**`
+            content: `**Note:** Insider new buy. [Click here to view the Contract Address](https://dexscreener.com/solana/${contractAddress})`
         })
         console.log("Message sent to discord")
     } catch (error) {
