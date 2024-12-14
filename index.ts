@@ -122,10 +122,10 @@ Bun.serve({
     port: 3001,
     async fetch(req, server) {
         const headers = {
-            "Access-Control-Allow-Origin": "*",  
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS", 
-            "Access-Control-Allow-Headers": "Content-Type", 
-        }
+            "Access-Control-Allow-Origin": "https://alphabox-five.vercel.app",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          }
         if (req.method === "OPTIONS") {
             return new Response(null, { status: 204, headers });
         }
