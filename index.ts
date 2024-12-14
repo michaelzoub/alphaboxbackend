@@ -13,7 +13,7 @@ let socket: any
 let initial_message:boolean = true
 let subscriptionSent: boolean = false
 
-let transaction_detailed_info: any
+const caArray = new Set()
 
 async function sendToDiscordBot(contractAddress:string) {
     try {
@@ -101,6 +101,7 @@ async function fetchTransaction(transaction: string, id: number, address: string
     const pre_balances = body.result.meta.preTokenBalances
     //verify before and after to check if it's a sale or a buy
     const ca = verifyIfSale(pre_balances, post_balances, address)
+    caArray.add(ca)
     if (!ca) {
         console.log("This is a sale.")
         return
@@ -108,7 +109,6 @@ async function fetchTransaction(transaction: string, id: number, address: string
     console.log("TRANSACTION MESSAGE: ", body.result.transaction.message)
     //first account key is the user's address, third is the pair address
     console.log("STATUS: ", body.result.meta.status)
-    transaction_detailed_info = body
     return ca
 }
 
@@ -194,7 +194,7 @@ Bun.serve({
                                 fetchTransaction(signature, unique_id, contractAddress)
                                 .then((info: any) => {
                                     console.log("Info before sending to discord bot: ", info)
-                                    if (typeof info !== "undefined") {
+                                    if (typeof info !== "undefined" && !caArray.has(contractAddress)) {
                                         sendToDiscordBot(info)
                                     }
                                 })
