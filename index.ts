@@ -194,7 +194,9 @@ Bun.serve({
                                 fetchTransaction(signature, unique_id, contractAddress)
                                 .then((info: any) => {
                                     console.log("Info before sending to discord bot: ", info)
-                                    sendToDiscordBot(info)
+                                    if (typeof info !== "undefined") {
+                                        sendToDiscordBot(info)
+                                    }
                                 })
                                 .catch((error) => {
                                     console.error(error)
@@ -234,7 +236,6 @@ Bun.serve({
             ws.send(message)
             console.log("maybe sending message here?")
             //discord logic
-            sendToDiscordBot(message)
         },
         open(ws) {
             //set up connection to targeted websockets on open!
