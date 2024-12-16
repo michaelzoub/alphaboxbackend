@@ -118,158 +118,6 @@ function sendSubscription(subscription: any, socket: any) {
     return
 }
 
-class WebSocketManager {
-    private socket: WebSocket | null = null;
-    private activeSubscriptions = new Set<string>();
-    private notificationTracker = new Set<string>();
-    private isConnected = false;
-
-    constructor() {
-        // Add logging when instance is created
-        console.log('WebSocket Manager initialized');
-    }
-
-    async connect() {
-        try {
-            if (this.socket?.readyState === WebSocket.OPEN) {
-                console.log('WebSocket already connected');
-                return;
-            }
-
-            console.log('Attempting to connect to WebSocket...');
-            this.socket = new WebSocket(websocketEndpoint[1]);
-            this.setupEventListeners();
-
-            // Re-subscribe to all active subscriptions after reconnect
-            this.resubscribeAll();
-        } catch (error) {
-            console.error('WebSocket connection error:', error);
-        }
-    }
-
-    private setupEventListeners() {
-        if (!this.socket) return;
-
-        this.socket.addEventListener('open', () => {
-            console.log('WebSocket connected');
-            this.isConnected = true;
-            this.resubscribeAll();
-        });
-
-        this.socket.addEventListener('message', async (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('Received message type:', data.method || 'unknown');
-
-                if (data.method === "logsNotification") {
-                    const signature = data.params?.result?.value?.signature;
-                    const logs = data.params?.result?.value?.logs;
-                    console.log('Processing transaction:', signature);
-                    console.log('Associated logs:', logs);
-
-                    // Log which address triggered this notification
-                    const relevantAddress = this.findRelevantAddress(logs);
-                    console.log('Relevant address:', relevantAddress);
-
-                    if (signature) {
-                        await this.processTransaction(signature, relevantAddress);
-                    }
-                }
-            } catch (error) {
-                console.error('Error processing message:', error);
-            }
-        });
-
-        this.socket.addEventListener('close', () => {
-            console.log('WebSocket disconnected');
-            this.isConnected = false;
-            // Attempt to reconnect after delay
-            setTimeout(() => this.connect(), 5000);
-        });
-
-        this.socket.addEventListener('error', (error) => {
-            console.error('WebSocket error:', error);
-        });
-    }
-
-    async addSubscription(contractAddress: string) {
-        console.log('Adding subscription for:', contractAddress);
-        
-        if (this.activeSubscriptions.has(contractAddress)) {
-            console.log('Address already subscribed:', contractAddress);
-            return;
-        }
-
-        this.activeSubscriptions.add(contractAddress);
-        console.log('Current active subscriptions:', Array.from(this.activeSubscriptions));
-
-        if (!this.isConnected) {
-            await this.connect();
-        }
-
-        const subscription = {
-            jsonrpc: "2.0",
-            id: generate_unique_id(),
-            method: "logsSubscribe",
-            params: [
-                { mentions: [contractAddress] },
-                { commitment: "finalized" }
-            ]
-        };
-
-        try {
-            this.socket?.send(JSON.stringify(subscription));
-            console.log('Subscription sent for:', contractAddress);
-        } catch (error) {
-            console.error('Error sending subscription:', error);
-            this.activeSubscriptions.delete(contractAddress);
-        }
-    }
-
-    private async processTransaction(signature: string, address: string) {
-        try {
-            const ca = await fetchTransaction(signature, generate_unique_id(), address);
-            
-            if (ca && !this.notificationTracker.has(ca)) {
-                console.log('Sending notification for:', ca);
-                await sendToDiscordBot(ca);
-                this.notificationTracker.add(ca);
-            }
-        } catch (error) {
-            console.error('Error processing transaction:', error);
-        }
-    }
-
-    private async resubscribeAll() {
-        console.log('Resubscribing to all addresses...');
-        for (const address of this.activeSubscriptions) {
-            await this.addSubscription(address);
-        }
-    }
-
-    // Helper to find which address triggered the notification
-    private findRelevantAddress(logs: string[]): string {
-        for (const address of this.activeSubscriptions) {
-            if (logs.some(log => log.includes(address))) {
-                return address;
-            }
-        }
-        return '';
-    }
-
-    // Debug method to check current state
-    getStatus() {
-        return {
-            isConnected: this.isConnected,
-            activeSubscriptions: Array.from(this.activeSubscriptions),
-            notificationsSent: Array.from(this.notificationTracker)
-        };
-    }
-}
-
-// Create single instance
-const wsManager = new WebSocketManager();
-
 Bun.serve({
     port: 3001,
     async fetch(req, server) {
@@ -286,21 +134,96 @@ Bun.serve({
             try {
                 console.log("POST hit.")
                 const contractAddress = await req.json()
-                console.log('Received subscription request for:', contractAddress);
-
-                await wsManager.addSubscription(contractAddress);
-                
-                // Add endpoint to check status
-                if (req.url.endsWith('/status')) {
-                    return new Response(JSON.stringify(wsManager.getStatus()), {
-                        headers: { 'Content-Type': 'application/json' }
-                    });
+                console.log(contractAddress)
+                subscriptions.add(contractAddress)
+                if (!socket) {
+                    socket = new WebSocket(websocketEndpoint[1])
                 }
+                console.log("This is the socket: ", socket)
+                const unique_id: number = generate_unique_id()
+                const subscription = {
+                    jsonrpc: "2.0",
+                    id: unique_id,
+                    method: "logsSubscribe",
+                    params: [
+                      {
+                        mentions: [contractAddress],
+                      },
+                      {
+                        commitment: "finalized",
+                      },
+                    ],
+                  }
+                console.log("Subscribed: ", subscription)
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    console.log("socket ready and sending subscription format: ")
+                }
+                //add to database:
+                if (!database) {
+                    console.log("no database")
+                    //return
+                }
+                socket.addEventListener("open", (event:any) => {
+                    console.log("Ws opened: ", event)
+                    socket.send(JSON.stringify(subscription))
+                    subscriptionSent = true
+                    console.log("Sent to Solana")
+                    //ping/pong mechanism
+                    setInterval(() => {
+                        socket.send(JSON.stringify({ data: { type: "ping" } }))
+                    }, 50000)
+                })
+                socket.addEventListener("message", (event:any) => {
+                    try {
+                        const data = JSON.parse(event.data)
+                        if (data.type == "ping") {
+                            console.log("Ping")
+                            socket.send(JSON.stringify({ type: "pong" }))
+                        }
+                        if (data.type == "pong") {
+                            console.log("PING PONG.")
+                        }
+                        //check if swap, then check if it's a buy and if it is, send to discord bot
+                        console.log("Event detected: ", event)
+                        if (data.method === "logsNotification") {
+                            try {
+                                const signature = data.params?.result?.value?.signature
+                                console.log("ALL DATA: ", data)
+                                console.log("PARAMS DATA: ", data.params)
+                                console.log(signature)
+                                fetchTransaction(signature, unique_id, contractAddress)
+                                .then((info: any) => {
+                                    console.log("Info before sending to discord bot: ", info)
+                                    if (typeof info !== "undefined" && !caArray.has(contractAddress)) {
+                                        sendToDiscordBot(info)
+                                    }
+                                })
+                                .catch((error) => {
+                                    console.error(error)
+                                })
+                            } catch (error) {
+                                console.log("Wrong message: ", error)
+                            }
+                        }
+                        initial_message = false
+                    } catch (error) {
+                        console.error(error)
+                    }
+                })
+                socket.addEventListener("error", (event:any) => {
+                    console.log("Error: ", event)
+                })
+                socket.addEventListener("close", (event:any) => {
+                    console.error(event)
+                    socket = new WebSocket(websocketEndpoint[1])
+                    socket.send(JSON.stringify(subscription))
+                })
 
-                return new Response("Subscribed to contract: " + contractAddress);
+                console.log(`Subscribed to contract address.`)
+                return new Response("Subscribed to contract: " + contractAddress)
             } catch (error) {
-                console.error("Error in request handler:", error);
-                return new Response("Error processing request", { status: 500 });
+                console.log("Errors")
+                console.error(error)
             }
         }
         if (server.upgrade(req)) {
